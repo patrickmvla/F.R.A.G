@@ -1,27 +1,30 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
+import { FactoryProvider } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Pool } from 'pg';
+import { NodePgDatabase, drizzle } from 'drizzle-orm/node-postgres';
+import { z } from 'zod';
 import { DRIZZLE_ORM } from './drizzle.constants';
 import * as schema from '../db/schema';
-import { FactoryProvider } from '@nestjs/common';
-import { z } from 'zod';
 
-const envSchema = z.object({
+const databaseSchema = z.object({
   DATABASE_URL: z.string().url(),
 });
 
-export const DrizzleProvider: FactoryProvider = {
+export const drizzleProvider: FactoryProvider<NodePgDatabase<typeof schema>> = {
   provide: DRIZZLE_ORM,
+  inject: [ConfigService],
+  useFactory: (configService: ConfigService) => {
+    const connectionString = configService.get<string>('DATABASE_URL');
 
-  inject: [],
-  useFactory: () => {
-    const { DATABASE_URL } = envSchema.parse(process.env);
-
-    const pool = new Pool({
-      connectionString: DATABASE_URL,
-      ssl: true, // Required for Neon
+    const validatedEnv = databaseSchema.parse({
+      DATABASE_URL: connectionString,
     });
 
-    const db = drizzle(pool, { schema });
-    return db;
+    const pool = new Pool({
+      connectionString: validatedEnv.DATABASE_URL,
+      ssl: true,
+    });
+
+    return drizzle(pool, { schema });
   },
 };
