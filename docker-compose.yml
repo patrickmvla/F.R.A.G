@@ -1,0 +1,120 @@
+services:
+  # Main NestJS Backend Service
+  backend-ts:
+    build: ./backend-ts
+    container_name: backend-ts
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code for hot-reloading
+      - ./backend-ts:/usr/src/app
+      # Prevents the local node_modules from overwriting the container's node_modules
+      - /usr/src/app/node_modules
+    env_file:
+      - .env # For database credentials, etc.
+    depends_on:
+      - rabbitmq
+      - elasticsearch
+      - neo4j
+      - weaviate
+    networks:
+      - frag-net
+
+  # Python Document Processor Service
+  doc-processor:
+    build: ./services-py/document-processor
+    container_name: doc-processor
+    ports:
+      - "8001:8000"
+    volumes:
+      # Mount source code for hot-reloading
+      - ./services-py/document-processor/app:/app
+    env_file:
+      - .env # For R2 and RabbitMQ connection details
+    depends_on:
+      - rabbitmq
+    networks:
+      - frag-net
+
+  # Python Re-ranker Service
+  re-ranker:
+    build: ./services-py/re-ranker
+    container_name: re-ranker
+    ports:
+      - "8002:8000"
+    volumes:
+      # Mount source code for hot-reloading
+      - ./services-py/re-ranker/app:/app
+    networks:
+      - frag-net
+
+  # --- Infrastructure Services ---
+
+  # Message Queue
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # For application connections
+      - "15672:15672" # For the web management UI
+    networks:
+      - frag-net
+
+  # Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:latest
+    container_name: weaviate
+    ports:
+      - "8080:8080"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - ./weaviate-data:/var/lib/weaviate
+    networks:
+      - frag-net
+
+  # Keyword Search Database
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false # Disable security for local dev
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - ./elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - frag-net
+
+  # Graph Database
+  neo4j:
+    image: neo4j:5-community
+    container_name: neo4j
+    ports:
+      - "7474:7474" # For the web UI
+      - "7687:7687" # For the Bolt driver connection
+    environment:
+      - NEO4J_AUTH=none # Disable auth for local dev
+    volumes:
+      - ./neo4j-data:/data
+    networks:
+      - frag-net
+
+# Define a shared network for all services
+networks:
+  frag-net:
+    driver: bridge
+
+# Define named volumes for persistent data
+#docker-compose up --build
+volumes:
+  weaviate-data:
+  elasticsearch-data:
+  neo4j-data:

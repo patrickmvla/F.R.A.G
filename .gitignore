@@ -1,0 +1,17 @@
+# Ignore node modules
+node_modules/
+dist/
+
+# Ignore secrets and environment variables
+.env
+*.env
+
+# Ignore Docker data volumes
+weaviate-data/
+elasticsearch-data/
+neo4j-data/
+
+# Ignore IDE and OS files
+.vscode/
+.idea/
+.DS_Store

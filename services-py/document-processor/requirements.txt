@@ -1,0 +1,3 @@
+# services-py/document-processor/requirements.txt
+fastapi
+uvicorn[standard]
