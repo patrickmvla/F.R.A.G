@@ -6,5 +6,4 @@ export class CreateTenantDto {
   @IsNotEmpty()
   @Length(3, 100)
   name: string;
-  /* eslint-enable @typescript-eslint/no-unsafe-call */
 }

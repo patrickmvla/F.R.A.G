@@ -26,9 +26,22 @@ export default tseslint.config(
   },
   {
     rules: {
+      // --- START: MODIFICATION ---
+      // This rule overrides the default to allow underscore-prefixed variables to be unused.
+      '@typescript-eslint/no-unused-vars': [
+        'error', // Keep the severity as an error for truly unused variables
+        {
+          argsIgnorePattern: '^_', // This is the key: ignore arguments starting with '_'
+          varsIgnorePattern: '^_', // Good practice to ignore local variables starting with '_' too
+          caughtErrorsIgnorePattern: '^_', // And caught error variables
+        },
+      ],
+      // --- END: MODIFICATION ---
+
+      // Your existing rules:
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
-      '@typescript-eslint/no-unsafe-argument': 'warn'
+      '@typescript-eslint/no-unsafe-argument': 'warn',
     },
   },
 );

@@ -1,120 +1,141 @@
+networks:
+  frag_net:
+    driver: bridge
+
 services:
-  # Main NestJS Backend Service
-  backend-ts:
-    build: ./backend-ts
-    container_name: backend-ts
-    ports:
-      - "3000:3000"
-    volumes:
-      # Mount source code for hot-reloading
-      - ./backend-ts:/usr/src/app
-      # Prevents the local node_modules from overwriting the container's node_modules
-      - /usr/src/app/node_modules
-    env_file:
-      - .env # For database credentials, etc.
-    depends_on:
-      - rabbitmq
-      - elasticsearch
-      - neo4j
-      - weaviate
-    networks:
-      - frag-net
-
-  # Python Document Processor Service
-  doc-processor:
-    build: ./services-py/document-processor
-    container_name: doc-processor
-    ports:
-      - "8001:8000"
-    volumes:
-      # Mount source code for hot-reloading
-      - ./services-py/document-processor/app:/app
-    env_file:
-      - .env # For R2 and RabbitMQ connection details
-    depends_on:
-      - rabbitmq
-    networks:
-      - frag-net
-
-  # Python Re-ranker Service
-  re-ranker:
-    build: ./services-py/re-ranker
-    container_name: re-ranker
-    ports:
-      - "8002:8000"
-    volumes:
-      # Mount source code for hot-reloading
-      - ./services-py/re-ranker/app:/app
-    networks:
-      - frag-net
-
-  # --- Infrastructure Services ---
-
-  # Message Queue
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    container_name: rabbitmq
-    ports:
-      - "5672:5672"   # For application connections
-      - "15672:15672" # For the web management UI
-    networks:
-      - frag-net
-
-  # Vector Database
+  # --------------------------------------------------------------------------
+  #   DATABASE & CACHE SERVICES
+  # --------------------------------------------------------------------------
   weaviate:
     image: semitechnologies/weaviate:latest
-    container_name: weaviate
+    hostname: weaviate
+    networks:
+      - frag_net
     ports:
       - "8080:8080"
+      - "50051:50051"
+    volumes:
+      - weaviate-data:/var/lib/weaviate
     environment:
       QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      DEFAULT_VECTORIZER_MODULE: 'none'
-      ENABLE_MODULES: ''
-      CLUSTER_HOSTNAME: 'node1'
-    volumes:
-      - ./weaviate-data:/var/lib/weaviate
-    networks:
-      - frag-net
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "none"
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "node1"
 
-  # Keyword Search Database
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.0
-    container_name: elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false # Disable security for local dev
+    hostname: elasticsearch
+    networks:
+      - frag_net
     ports:
       - "9200:9200"
       - "9300:9300"
     volumes:
-      - ./elasticsearch-data:/usr/share/elasticsearch/data
-    networks:
-      - frag-net
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
 
-  # Graph Database
   neo4j:
     image: neo4j:5-community
-    container_name: neo4j
-    ports:
-      - "7474:7474" # For the web UI
-      - "7687:7687" # For the Bolt driver connection
-    environment:
-      - NEO4J_AUTH=none # Disable auth for local dev
-    volumes:
-      - ./neo4j-data:/data
+    hostname: neo4j
     networks:
-      - frag-net
+      - frag_net
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j-data:/data
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password}
 
-# Define a shared network for all services
-networks:
-  frag-net:
-    driver: bridge
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    hostname: rabbitmq
+    networks:
+      - frag_net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-user}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASS:-password}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping", "-q"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
-# Define named volumes for persistent data
-#docker-compose up --build
+  # --------------------------------------------------------------------------
+  #   APPLICATION SERVICES
+  # --------------------------------------------------------------------------
+  backend-ts:
+    build:
+      context: ./backend-ts
+      dockerfile: Dockerfile
+    networks:
+      - frag_net
+    ports:
+      - "3000:3000"
+    # This service is now correctly configured to run its pre-built image
+    # without a conflicting volume mount.
+    environment:
+      - NODE_ENV=production
+      - RABBITMQ_URI=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASS:-password}@rabbitmq:5672
+      # These are required by the docker-entrypoint.sh script for the wait-loop.
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    # FIX: The conflicting `volumes` section has been removed. This is the change that
+    # makes the system correct and allows the container to find the `dist` folder.
+    # The previous line `volumes: ['./backend-ts:/usr/src/app']` was the root cause
+    # of the `Cannot find module` error.
+
+  doc-processor:
+    build:
+      context: ./services-py/document-processor
+      dockerfile: Dockerfile
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - frag_net
+    volumes:
+      - ./services-py/document-processor/app:/app
+    ports:
+      - "8001:8000"
+    environment:
+      - RABBITMQ_URI=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASS:-password}@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  re-ranker:
+    build:
+      context: ./services-py/re-ranker
+      dockerfile: Dockerfile
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - frag_net
+    volumes:
+      - ./services-py/re-ranker/app:/app
+    ports:
+      - "8002:8000"
+    environment:
+      - RABBITMQ_URI=amqp://${RABBITMQ_USER:-user}:${RABBITMQ_PASS:-password}@rabbitmq:5672
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
 volumes:
   weaviate-data:
   elasticsearch-data:
   neo4j-data:
+  rabbitmq-data:

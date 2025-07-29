@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DrizzleModule } from './drizzle/drizzle.module';
+import { IngestionModule } from './ingestion/ingestion.module';
+import { MessagingModule } from './messaging/messaging.module';
 import { TenantsModule } from './tenants/tenants.module';
-import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -15,6 +17,8 @@ import { UsersModule } from './users/users.module';
     DrizzleModule,
     TenantsModule,
     UsersModule,
+    IngestionModule,
+    MessagingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
