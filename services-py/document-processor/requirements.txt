@@ -1,3 +1,11 @@
 # services-py/document-processor/requirements.txt
 fastapi
 uvicorn[standard]
+pika
+python-dotenv
+
+# For connecting to R2
+boto3
+
+# For intelligent document parsing (PDFs, HTML, etc.)
+unstructured[local-inference]

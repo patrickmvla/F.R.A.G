@@ -104,7 +104,7 @@ services:
     build:
       context: ./services-py/document-processor
       dockerfile: Dockerfile
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    command: python main.py
     networks:
       - frag_net
     volumes:
